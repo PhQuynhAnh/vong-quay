@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Vòng Quay</title>
+    <!-- Nhúng file CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Tiêu đề chung -->
+    <div class="header">
+        <h1 id="mainTitle">Hệ Thống Vòng Quay</h1>
+        <p id="roleIndicator" class="badge">Đang tải phân quyền...</p>
+    </div>
+
+    <div class="container">
+        <!-- KHU VỰC DÀNH CHO MẸ BẠN (CLIENT) -->
+        <div id="setupArea" class="card" style="display: none;">
+            <h3>Thiết lập vòng quay</h3>
+            
+            <button id="btnRecord" class="btn-outline-red mb-3">
+                🎥 1. Bật Ghi Hình Trình Duyệt Trước
+            </button>
+            <p id="recordStatus" class="text-small" style="color: #e74c3c; margin-bottom: 15px;">(Bắt buộc phải bật ghi hình để minh bạch)</p>
+
+            <label>Tên Chương Trình / Lần Quay:</label>
+            <input type="text" id="wheelTitle" placeholder="Ví dụ: Lần 1 - Bốc thăm nhóm A">
+
+            <label>Danh sách tên (Mỗi tên 1 dòng):</label>
+            <textarea id="nameList" placeholder="A&#10;B&#10;C"></textarea>
+
+            <button id="btnCreateWheel" class="btn-primary" disabled>
+                2. Cập Nhật & Tạo Vòng Quay
+            </button>
+
+            <!-- Khu vực chia sẻ link (Ẩn lúc đầu) -->
+            <div id="shareArea" class="share-box" style="display: none;">
+                <p>✅ Đã chốt danh sách!</p>
+                <button id="btnCopyLink" class="btn-outline-blue">
+                    🔗 Copy Link Cho Người Xem
+                </button>
+            </div>
+        </div>
+
+        <!-- KHU VỰC VÒNG QUAY (Hiển thị cho tất cả) -->
+        <div id="wheelArea" class="card" style="display: none; text-align: center;">
+            <h2 id="displayTitle" style="color: #2c3e50; margin-bottom: 20px;"></h2>
+            
+            <div class="wheel-wrapper">
+                <div class="pointer"></div>
+               <canvas id="wheel" width="300" height="300" class="wheel"></canvas>
+            </div>
+
+            <!-- Chỉ hiện nút này cho mẹ bạn -->
+            <button id="btnSpin" class="btn-spin" style="display: none;">QUAY NGAY</button>
+            
+            <div id="resultBox" class="result-box" style="display: none;"></div>
+        </div>
+
+        <!-- NHẬT KÝ LỊCH SỬ -->
+        <div class="card">
+            <h3>🕒 Nhật Ký Trực Tiếp</h3>
+            <div id="historyList" class="history-list">
+                <p style="text-align: center; color: #7f8c8d;">Đang đồng bộ dữ liệu...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Nhúng file JavaScript (Khai báo type="module" để dùng Firebase) -->
+    <script type="module" src="script.js"></script>
+</body>
+</html>
