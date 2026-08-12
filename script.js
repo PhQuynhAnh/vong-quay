@@ -27,9 +27,9 @@ let recordedChunks = [];
 let namesArray = [];
 const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 let lastProcessedSpinId = null; 
-let currentWheelId = wheelIdParam || null; // Lấy ID vòng quay nếu có
+let currentWheelId = wheelIdParam || null; 
 let wheelUnsubscribe = null; 
-let historyUnsubscribe = null; // Biến tắt kết nối lịch sử cũ
+let historyUnsubscribe = null; 
 
 // THIẾT LẬP GIAO DIỆN KHI TRANG VỪA TẢI
 window.onload = () => {
@@ -51,7 +51,7 @@ window.onload = () => {
     } else if (userRole === 'admin') {
         roleIndicator.textContent = "Chế độ: Quản Trị Viên";
         roleIndicator.className = "badge admin";
-        if (currentWheelId) listenToHistory(currentWheelId);
+        listenToHistory(); // Quản trị viên tự động load toàn bộ "Sổ cái"
     } else {
         // CLIENT (QUẢN LÝ QUAY)
         roleIndicator.textContent = "Vai trò: Quản lý quay";
@@ -62,12 +62,11 @@ window.onload = () => {
         document.getElementById('resultBox').style.display = 'none';
 
         drawWheelCanvas([]); 
-        // Lịch sử lúc đầu sẽ trống vì chưa tạo vòng quay
         document.getElementById('historyList').innerHTML = '<p style="text-align: center; color: #7f8c8d;">Hãy tạo vòng quay để bắt đầu.</p>';
     }
 };
 
-// 1. TÍNH NĂNG GHI HÌNH (BAO GỒM ĐIỆN THOẠI & ÉP CHROME TÌM ĐÚNG TAB)
+// 1. TÍNH NĂNG GHI HÌNH
 document.getElementById('btnRecord')?.addEventListener('click', async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         const confirmRecord = confirm(
@@ -148,10 +147,10 @@ document.getElementById('btnCreateWheel')?.addEventListener('click', async () =>
     document.getElementById('shareArea').style.display = 'block';
     
     startListeningToWheel(currentWheelId);
-    listenToHistory(currentWheelId); // Bắt đầu lắng nghe lịch sử riêng của vòng quay này
+    listenToHistory(currentWheelId); 
 });
 
-// Nút Copy Link 
+// Copy Link 
 document.getElementById('btnCopyLink')?.addEventListener('click', () => {
     const baseUrl = window.location.origin + window.location.pathname;
     const viewerUrl = baseUrl + "?role=viewer&id=" + currentWheelId;
@@ -179,7 +178,7 @@ document.getElementById('btnSpin')?.addEventListener('click', async () => {
     });
 });
 
-// 4. LẮNG NGHE DỮ LIỆU CỦA 1 VÒNG QUAY CỤ THỂ
+// 4. LẮNG NGHE & VẼ VÒNG QUAY
 function startListeningToWheel(wheelId) {
     if (wheelUnsubscribe) wheelUnsubscribe(); 
 
@@ -297,23 +296,37 @@ function triggerSpinAnimation(winnerIndex, spinId, title) {
                 document.getElementById('btnRecord').innerText = "🎥 Video Đang Tải Xuống";
             }
 
-            // LƯU LỊCH SỬ VÀO THƯ MỤC CON CỦA RIÊNG VÒNG QUAY NÀY
+            // GHI CHÉP KÉP: 1. Lưu vào thư mục riêng của vòng quay này
             await setDoc(doc(db, "wheels", currentWheelId, "history", String(spinId)), {
                 title: title,
                 winner: winnerName,
                 time: new Date().getTime()
             });
+
+            // GHI CHÉP KÉP: 2. Lưu thêm một bản vào sổ cái chung (để Admin dễ soi)
+            await setDoc(doc(db, "history", String(spinId)), {
+                title: title,
+                winner: winnerName,
+                time: new Date().getTime(),
+                wheelId: currentWheelId // Đánh dấu xuất xứ vòng quay
+            });
         }
     }, 5000);
 }
 
-// 5. HIỂN THỊ LỊCH SỬ ĐỘC LẬP
+// 5. HIỂN THỊ LỊCH SỬ ĐỘC LẬP / SỔ CÁI
 function listenToHistory(wheelId) {
     if (historyUnsubscribe) historyUnsubscribe(); 
-    if (!wheelId) return;
 
-    // Chỉ truy vấn lịch sử nằm bên trong thư mục của vòng quay hiện tại
-    const q = query(collection(db, "wheels", wheelId, "history"), orderBy("time", "desc"));
+    let q;
+    if (userRole === 'admin') {
+        // Admin xem sổ cái tổng (tất cả các vòng quay)
+        q = query(collection(db, "history"), orderBy("time", "desc"));
+    } else {
+        // Người xem và Client chỉ xem lịch sử của riêng vòng quay hiện tại
+        if (!wheelId) return;
+        q = query(collection(db, "wheels", wheelId, "history"), orderBy("time", "desc"));
+    }
     
     historyUnsubscribe = onSnapshot(q, (snapshot) => {
         const historyList = document.getElementById('historyList');
@@ -342,7 +355,8 @@ function listenToHistory(wheelId) {
             `;
 
             if (userRole === 'admin') {
-                htmlContent += `<button class="btn-delete" onclick="deleteHistory('${wheelId}', '${docSnap.id}')">Xóa</button>`;
+                const wId = data.wheelId || '';
+                htmlContent += `<button class="btn-delete" onclick="deleteHistory('${wId}', '${docSnap.id}')">Xóa</button>`;
             }
 
             div.innerHTML = htmlContent;
@@ -351,8 +365,12 @@ function listenToHistory(wheelId) {
     });
 }
 
+// XÓA ĐỒNG BỘ Ở CẢ HAI NƠI
 window.deleteHistory = async (wId, hId) => {
     if (confirm("Chắc chắn xóa kết quả này?")) {
-        await deleteDoc(doc(db, "wheels", wId, "history", hId));
+        await deleteDoc(doc(db, "history", hId)); // Xóa ở sổ cái chung
+        if (wId && wId !== 'undefined') {
+            await deleteDoc(doc(db, "wheels", wId, "history", hId)); // Xóa ở vòng quay con
+        }
     }
 };
