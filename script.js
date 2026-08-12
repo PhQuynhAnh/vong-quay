@@ -62,7 +62,8 @@ window.onload = () => {
         document.getElementById('resultBox').style.display = 'none';
 
         drawWheelCanvas([]); 
-        document.getElementById('historyList').innerHTML = '<p style="text-align: center; color: #7f8c8d;">Hãy tạo vòng quay để bắt đầu.</p>';
+        // ... VÀ THAY BẰNG LỆNH NÀY: Bật lịch sử tổng cho mẹ bạn xem ngay lập tức
+        listenToHistory(); 
     }
 };
 
@@ -318,9 +319,9 @@ function triggerSpinAnimation(winnerIndex, spinId, title) {
 function listenToHistory(wheelId) {
     if (historyUnsubscribe) historyUnsubscribe(); 
 
-    let q;
-    if (userRole === 'admin') {
-        // Admin xem sổ cái tổng (tất cả các vòng quay)
+   let q;
+    // GỘP QUYỀN: Cả Admin và Client (Mẹ bạn) đều được xem Sổ cái tổng
+    if (userRole === 'admin' || userRole === 'client') {
         q = query(collection(db, "history"), orderBy("time", "desc"));
     } else {
         // Người xem và Client chỉ xem lịch sử của riêng vòng quay hiện tại
