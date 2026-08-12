@@ -1,8 +1,8 @@
-// BƯỚC 1: IMPORT THƯ VIỆN FIREBASE
+// BƯỚC 1: IMPORT THƯ VIỆN FIREBASE (Đã bổ sung lệnh updateDoc)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, orderBy, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, orderBy, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// BƯỚC 2: CẤU HÌNH FIREBASE (Tôi đã điền sẵn cho bạn rồi)
+// BƯỚC 2: CẤU HÌNH FIREBASE
 const firebaseConfig = {
     apiKey: "AIzaSyC7Q0aO0DmqEKxgruEsQxpIwf5I0TR1afE",
     authDomain: "vong-quay-app.firebaseapp.com",
@@ -12,13 +12,13 @@ const firebaseConfig = {
     appId: "1:69861968161:web:35457b824b3cfb5e17d660"
 };
 
-// KHỞI TẠO FIREBASE
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// XÁC ĐỊNH VAI TRÒ DỰA VÀO ĐƯỜNG LINK (URL)
+// LẤY DỮ LIỆU TỪ LINK URL
 const urlParams = new URLSearchParams(window.location.search);
-const userRole = urlParams.get('role') || 'client'; // Mặc định là client (Mẹ bạn)
+const userRole = urlParams.get('role') || 'client'; 
+const wheelIdParam = urlParams.get('id'); // Lấy mã ID của vòng quay từ link
 
 // BIẾN TOÀN CỤC
 let isRecording = false;
@@ -26,9 +26,11 @@ let mediaRecorder;
 let recordedChunks = [];
 let namesArray = [];
 const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
-let lastProcessedSpinId = null; // Chốt chặn lỗi lưu đúp 2 lần
+let lastProcessedSpinId = null; 
+let currentWheelId = null; // Chứa mã ID của vòng quay hiện tại
+let wheelUnsubscribe = null; // Biến để tắt kết nối cũ
 
-// THIẾT LẬP GIAO DIỆN THEO VAI TRÒ KHI TRANG VỪA TẢI
+// THIẾT LẬP GIAO DIỆN KHI TRANG VỪA TẢI
 window.onload = () => {
     const roleIndicator = document.getElementById('roleIndicator');
     
@@ -36,12 +38,21 @@ window.onload = () => {
         roleIndicator.textContent = "Chế độ: Người Xem";
         roleIndicator.className = "badge viewer";
         document.getElementById('wheelArea').style.display = 'block'; 
-        document.getElementById('displayTitle').textContent = "Đang chờ thiết lập...";
+        
+        // NẾU LINK CÓ MÃ ID -> KẾT NỐI VÀO ĐÚNG VÒNG QUAY ĐÓ
+        if (wheelIdParam) {
+            document.getElementById('displayTitle').textContent = "Đang tải dữ liệu vòng quay...";
+            startListeningToWheel(wheelIdParam); 
+        } else {
+            document.getElementById('displayTitle').textContent = "Link không hợp lệ hoặc đã cũ!";
+            drawWheelCanvas([]);
+        }
     } else if (userRole === 'admin') {
         roleIndicator.textContent = "Chế độ: Quản Trị Viên";
         roleIndicator.className = "badge admin";
+        listenToHistory();
     } else {
-        // Chế độ Client (Mẹ bạn)
+        // CLIENT (MẸ BẠN)
         roleIndicator.textContent = "Vai trò: Quản lý quay";
         roleIndicator.className = "badge client";
         document.getElementById('setupArea').style.display = 'block';
@@ -49,37 +60,33 @@ window.onload = () => {
         document.getElementById('btnSpin').style.display = 'block';
         document.getElementById('resultBox').style.display = 'none';
 
-        // TỰ ĐỘNG RESET VÒNG QUAY TRÊN MÁY CHỦ KHI MẸ BẠN F5
-        setDoc(doc(db, "app_data", "current_wheel"), {
-            title: "Đang chờ thiết lập...",
-            names: [],
-            isSpinning: false,
-            winnerIndex: -1,
-            timestamp: new Date().getTime()
-        });
+        drawWheelCanvas([]); 
+        listenToHistory();
     }
-
-    listenToWheelState();
-    listenToHistory();
 };
 
-// 1. TÍNH NĂNG GHI HÌNH (DÀNH CHO CLIENT)
-// 1. TÍNH NĂNG GHI HÌNH (DÀNH CHO CLIENT)
+// 1. TÍNH NĂNG GHI HÌNH (BAO GỒM ĐIỆN THOẠI)
 document.getElementById('btnRecord')?.addEventListener('click', async () => {
-    // KIỂM TRA: Nếu là trình duyệt điện thoại (không hỗ trợ getDisplayMedia) thì cho qua
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        alert("Tính năng tự quay màn hình không hoạt động trên điện thoại. Hệ thống sẽ đặc cách mở khóa vòng quay!");
+        const confirmRecord = confirm(
+            "⚠️ YÊU CẦU MINH BẠCH:\n\n" +
+            "Trình duyệt điện thoại không cho phép tự quay video. Để đảm bảo công bằng, bạn hãy:\n" +
+            "1. Vuốt màn hình điện thoại xuống.\n" +
+            "2. Bật công cụ [Quay màn hình] của máy.\n" +
+            "3. Sau khi chắc chắn ĐÃ BẬT, hãy bấm 'OK' ở đây để tiếp tục."
+        );
         
-        document.getElementById('btnRecord').innerText = "📱 Điện Thoại: Đã Bỏ Qua Ghi Hình";
-        document.getElementById('btnRecord').style.border = "2px solid #10b981"; // Màu xanh lá
-        document.getElementById('btnRecord').style.color = "#10b981";
-        document.getElementById('btnRecord').style.backgroundColor = "#d1fae5";
-        document.getElementById('recordStatus').innerText = "Đã bỏ qua yêu cầu ghi hình trên thiết bị di động.";
-        document.getElementById('btnCreateWheel').disabled = false; // Mở khóa nút tạo vòng quay
-        return; // Dừng tại đây, không chạy các lệnh quay màn hình bên dưới nữa
+        if (confirmRecord) {
+            document.getElementById('btnRecord').innerText = "📱 Đã cam kết bật quay màn hình ngoài";
+            document.getElementById('btnRecord').style.border = "2px solid #10b981";
+            document.getElementById('btnRecord').style.color = "#10b981";
+            document.getElementById('btnRecord').style.backgroundColor = "#d1fae5";
+            document.getElementById('recordStatus').innerText = "Hãy giữ video trong máy để làm bằng chứng.";
+            document.getElementById('btnCreateWheel').disabled = false; 
+        }
+        return; 
     }
 
-    // Nếu là máy tính thì bắt buộc chạy ghi hình bình thường
     try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         mediaRecorder = new MediaRecorder(stream);
@@ -108,11 +115,11 @@ document.getElementById('btnRecord')?.addEventListener('click', async () => {
         document.getElementById('btnCreateWheel').disabled = false;
 
     } catch (err) {
-        alert("Trên máy tính, bạn phải cho phép ghi hình thì mới tiếp tục được để đảm bảo minh bạch!");
+        alert("Bạn phải cho phép ghi hình thì mới tiếp tục được!");
     }
 });
 
-// 2. TẠO LINK VÀ CẬP NHẬT VÒNG QUAY (DÀNH CHO CLIENT)
+// 2. TẠO VÒNG QUAY (TẠO ID ĐỘC NHẤT)
 document.getElementById('btnCreateWheel')?.addEventListener('click', async () => {
     const title = document.getElementById('wheelTitle').value || "Vòng quay ngẫu nhiên";
     const namesStr = document.getElementById('nameList').value;
@@ -123,7 +130,11 @@ document.getElementById('btnCreateWheel')?.addEventListener('click', async () =>
         return;
     }
 
-    await setDoc(doc(db, "app_data", "current_wheel"), {
+    // TẠO MÃ ID ĐỘC NHẤT CHO VÒNG QUAY NÀY
+    currentWheelId = "wheel_" + new Date().getTime();
+
+    // Lưu vào một thư mục 'wheels' riêng biệt trên Firebase
+    await setDoc(doc(db, "wheels", currentWheelId), {
         title: title,
         names: namesArray,
         isSpinning: false,
@@ -132,21 +143,25 @@ document.getElementById('btnCreateWheel')?.addEventListener('click', async () =>
     });
 
     document.getElementById('shareArea').style.display = 'block';
+    
+    // Bắt đầu lắng nghe chính vòng quay vừa tạo
+    startListeningToWheel(currentWheelId);
 });
 
-// Nút Copy Link Người Xem
+// Nút Copy Link 
 document.getElementById('btnCopyLink')?.addEventListener('click', () => {
     const baseUrl = window.location.origin + window.location.pathname;
-    const viewerUrl = baseUrl + "?role=viewer";
+    // TẠO LINK CHỨA MÃ ID VĨNH VIỄN
+    const viewerUrl = baseUrl + "?role=viewer&id=" + currentWheelId;
     
     navigator.clipboard.writeText(viewerUrl).then(() => {
-        alert("✅ Đã copy link thành công!\nMẹ bạn hãy dán gửi link này vào nhóm Zalo cho mọi người xem nhé.");
+        alert("✅ Đã copy link!\nLưu ý: Link này CHỈ DÀNH RIÊNG cho vòng quay hiện tại và kết quả sẽ lưu vĩnh viễn ở link này.");
     });
 });
 
 // 3. THỰC HIỆN QUAY
 document.getElementById('btnSpin')?.addEventListener('click', async () => {
-    if (namesArray.length < 2) return;
+    if (namesArray.length < 2 || !currentWheelId) return;
     
     const btnSpin = document.getElementById('btnSpin');
     btnSpin.disabled = true;
@@ -155,26 +170,29 @@ document.getElementById('btnSpin')?.addEventListener('click', async () => {
 
     const winnerIndex = Math.floor(Math.random() * namesArray.length);
 
-    await setDoc(doc(db, "app_data", "current_wheel"), {
-        title: document.getElementById('displayTitle').innerText,
-        names: namesArray,
+    // Cập nhật trạng thái vào đúng ID vòng quay đó
+    await updateDoc(doc(db, "wheels", currentWheelId), {
         isSpinning: true,
         winnerIndex: winnerIndex,
         spinId: new Date().getTime() 
     });
 });
 
-// 4. LẮNG NGHE DỮ LIỆU
-function listenToWheelState() {
-    onSnapshot(doc(db, "app_data", "current_wheel"), (snapshot) => {
-        if (!snapshot.exists()) return;
-        const data = snapshot.data();
+// 4. LẮNG NGHE DỮ LIỆU CỦA 1 VÒNG QUAY CỤ THỂ
+function startListeningToWheel(wheelId) {
+    if (wheelUnsubscribe) wheelUnsubscribe(); // Xóa kết nối cũ nếu có
+
+    wheelUnsubscribe = onSnapshot(doc(db, "wheels", wheelId), (snapshot) => {
+        if (!snapshot.exists()) {
+            document.getElementById('displayTitle').textContent = "Vòng quay không tồn tại!";
+            return;
+        }
         
+        const data = snapshot.data();
         namesArray = data.names || [];
         document.getElementById('displayTitle').textContent = data.title;
         drawWheelCanvas(namesArray);
 
-        // Kích hoạt hiệu ứng xoay (Có chốt chặn)
         if (data.isSpinning && data.spinId !== lastProcessedSpinId) {
             lastProcessedSpinId = data.spinId; 
             triggerSpinAnimation(data.winnerIndex, data.spinId, data.title);
@@ -194,7 +212,6 @@ function drawWheelCanvas(names) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // NẾU CHƯA CÓ DỮ LIỆU
     if (!names || names.length === 0) {
         ctx.beginPath();
         ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
@@ -216,7 +233,6 @@ function drawWheelCanvas(names) {
         return;
     }
 
-    // NẾU CÓ DỮ LIỆU
     const step = (2 * Math.PI) / names.length;
     let currentAngle = -Math.PI / 2; 
 
@@ -253,7 +269,7 @@ function drawWheelCanvas(names) {
     canvas.style.transform = `rotate(0deg)`;
 }
 
-// Xử lý hiệu ứng quay & Lưu kết quả
+// Hiệu ứng quay
 function triggerSpinAnimation(winnerIndex, spinId, title) {
     const wheel = document.getElementById('wheel');
     const step = 360 / namesArray.length;
@@ -273,8 +289,8 @@ function triggerSpinAnimation(winnerIndex, spinId, title) {
         
         if (userRole === 'client') {
             const btnSpin = document.getElementById('btnSpin');
-            btnSpin.innerText = "🔒 ĐÃ KHÓA KẾT QUẢ"; // Đổi chữ thông báo khóa
-            btnSpin.disabled = true; // Khóa cứng nút, không cho bấm nữa
+            btnSpin.innerText = "🔒 ĐÃ KHÓA KẾT QUẢ"; 
+            btnSpin.disabled = true; 
             
             if (isRecording && mediaRecorder && mediaRecorder.state === "recording") {
                 mediaRecorder.stop();
@@ -282,7 +298,6 @@ function triggerSpinAnimation(winnerIndex, spinId, title) {
                 document.getElementById('btnRecord').innerText = "🎥 Video Đang Tải Xuống";
             }
 
-            // LƯU LỊCH SỬ BẰNG CÁCH GHI ĐÈ ĐỂ TRÁNH TRÙNG LẶP
             await setDoc(doc(db, "history", String(spinId)), {
                 title: title,
                 winner: winnerName,
