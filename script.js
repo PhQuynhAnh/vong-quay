@@ -31,6 +31,7 @@ let currentWheelId = null; // Chứa mã ID của vòng quay hiện tại
 let wheelUnsubscribe = null; // Biến để tắt kết nối cũ
 
 // THIẾT LẬP GIAO DIỆN KHI TRANG VỪA TẢI
+// THIẾT LẬP GIAO DIỆN KHI TRANG VỪA TẢI
 window.onload = () => {
     const roleIndicator = document.getElementById('roleIndicator');
     
@@ -39,7 +40,6 @@ window.onload = () => {
         roleIndicator.className = "badge viewer";
         document.getElementById('wheelArea').style.display = 'block'; 
         
-        // NẾU LINK CÓ MÃ ID -> KẾT NỐI VÀO ĐÚNG VÒNG QUAY ĐÓ
         if (wheelIdParam) {
             document.getElementById('displayTitle').textContent = "Đang tải dữ liệu vòng quay...";
             startListeningToWheel(wheelIdParam); 
@@ -50,7 +50,6 @@ window.onload = () => {
     } else if (userRole === 'admin') {
         roleIndicator.textContent = "Chế độ: Quản Trị Viên";
         roleIndicator.className = "badge admin";
-        listenToHistory();
     } else {
         // CLIENT (MẸ BẠN)
         roleIndicator.textContent = "Vai trò: Quản lý quay";
@@ -61,8 +60,10 @@ window.onload = () => {
         document.getElementById('resultBox').style.display = 'none';
 
         drawWheelCanvas([]); 
-        listenToHistory();
     }
+
+    // ĐƯA LỆNH NÀY RA NGOÀI ĐỂ VAI TRÒ NÀO CŨNG XEM ĐƯỢC LỊCH SỬ
+    listenToHistory();
 };
 
 // 1. TÍNH NĂNG GHI HÌNH (BAO GỒM ĐIỆN THOẠI)
@@ -88,7 +89,10 @@ document.getElementById('btnRecord')?.addEventListener('click', async () => {
     }
 
     try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const stream = await navigator.mediaDevices.getDisplayMedia({ 
+    video: { displaySurface: "browser" },
+    preferCurrentTab: true // Lệnh ép Chrome ưu tiên hiển thị tab hiện tại
+});
         mediaRecorder = new MediaRecorder(stream);
         
         mediaRecorder.ondataavailable = (e) => {
